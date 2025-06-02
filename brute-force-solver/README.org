@@ -1,4 +1,5 @@
 #+title: Brute Force Microfluidic Mixing Graph Solver
+#+startup: latexpreview
 
 * Motivation
 
