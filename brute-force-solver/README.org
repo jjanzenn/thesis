@@ -5,9 +5,13 @@
 
 I conjecture that there is a brute force algorithm that solves the problem of constructing a mixing graph. This is a potential implementation of the algorithm. It reads a series of fractions as command line arguments and returns a mixing graph if there is one or exits with an error otherwise.
 
-* Compiling and running
+* Compiling
+
+Simply build it with =make=.
+
+* Running
 
 To get a mixing graph for fractions $\frac{1}{2}$, $\frac{3}{8}$, $\frac{3}{8}$, $\frac{3}{4}$, and $1$, run
 #+begin_src sh
-  go run . 1/2 3/8 3/8 3/4 1
+  ./mf-solver 1/2 3/8 3/8 3/4 1
 #+end_src
