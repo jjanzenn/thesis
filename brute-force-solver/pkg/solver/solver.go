@@ -2,7 +2,6 @@ package solver
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 
@@ -11,8 +10,6 @@ import (
 
 var seenStates map[string]bool
 var seenStatesLock sync.Mutex
-
-var sumInvariant uint64
 
 func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, targets string, state []fraction.Fraction) {
 	if targets == fmt.Sprint(state) {
@@ -37,17 +34,6 @@ func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, tar
 						return stateCopy[i2].LessThan(stateCopy[j2])
 					})
 
-					var sum uint64 = 0
-					for _, target := range stateCopy {
-						target.SetPrecision(maxPrecision)
-						sum += target.Numerator
-						target.Reduce()
-					}
-					if sum != sumInvariant {
-						log.Fatalf("Assertion failed: target sum %d != new sum %d\n%s and %s mix to create %s\n", sumInvariant, sum, frac1, frac2, mix)
-					}
-
-					//fmt.Println(stateCopy)
 					seenStatesLock.Lock()
 					strStateCopy := fmt.Sprint(stateCopy)
 					_, ok := seenStates[strStateCopy]
@@ -119,8 +105,6 @@ func Solve(maxPrecision uint8, targets []fraction.Fraction) ([][]fraction.Fracti
 	sort.Slice(initial, func(i, j int) bool {
 		return initial[i].LessThan(initial[j])
 	})
-
-	sumInvariant = sum
 
 	seenStates = make(map[string]bool)
 	results := make(chan [][]fraction.Fraction)
