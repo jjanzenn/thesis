@@ -42,7 +42,7 @@ func (f1 Fraction) Mix(f2 Fraction) (Fraction, error) {
 	if f1.DenominatorExponent < f2.DenominatorExponent {
 		err = f1.SetPrecision(f2.DenominatorExponent)
 	} else if f1.DenominatorExponent > f2.DenominatorExponent {
-		err = f1.SetPrecision(f1.DenominatorExponent)
+		err = f2.SetPrecision(f1.DenominatorExponent)
 	}
 
 	if err != nil {
@@ -53,10 +53,9 @@ func (f1 Fraction) Mix(f2 Fraction) (Fraction, error) {
 	if sum < f1.Numerator || sum < f2.Numerator {
 		return Fraction{0, 0}, fmt.Errorf("error mixing %s and %s: sum of numerators is out of bounds", f1, f2)
 	}
-	sum >>= 1
 	result := Fraction{
 		Numerator:           sum,
-		DenominatorExponent: f1.DenominatorExponent,
+		DenominatorExponent: f1.DenominatorExponent + 1,
 	}
 	result.Reduce()
 
@@ -72,6 +71,21 @@ func (f *Fraction) Reduce() {
 			f.Numerator >>= 1
 		}
 	}
+}
+
+func (f1 Fraction) LessThan(f2 Fraction) bool {
+	if f1.DenominatorExponent > f2.DenominatorExponent {
+		f2.SetPrecision(f1.DenominatorExponent)
+	} else if f1.DenominatorExponent < f2.DenominatorExponent {
+		f1.SetPrecision(f2.DenominatorExponent)
+	}
+	return f1.Numerator < f2.Numerator
+}
+
+func (f1 Fraction) Eq(f2 Fraction) bool {
+	f1.Reduce()
+	f2.Reduce()
+	return f1 == f2
 }
 
 func NewFraction(str string) (Fraction, error) {

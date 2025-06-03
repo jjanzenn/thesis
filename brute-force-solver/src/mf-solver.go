@@ -49,8 +49,10 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "with maximum denominator %d\n", uint64(1<<uint64(maxPrecision)))
 
-	_, err = solver.Solve(maxPrecision, target)
+	list, err := solver.Solve(maxPrecision, target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "No such graph: %s", err)
+		os.Exit(1)
 	}
+	fmt.Fprintln(os.Stderr, list)
 }
