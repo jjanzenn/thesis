@@ -15,3 +15,15 @@ To get a mixing graph for fractions $\frac{1}{2}$, $\frac{3}{8}$, $\frac{3}{8}$,
 #+begin_src sh
   ./mf-solver 1/2 3/8 3/8 3/4 1
 #+end_src
+
+It may be desired to run a large number of test cases in a batch. In which case, the =testcasegen= utility can be used to run a class of cases at the same time. =testcasegen= will output a list of potential targets, delimited by lines. To run =testcasegen=, do
+#+begin_src sh
+  ./testcasegen <graph width> <maximum denominator exponent>
+#+end_src
+
+To use them together to generate all possible graphs of width 5 with maximum denominator $2^3$, for instance, you could run
+#+begin_src sh
+  while read -r line; do
+      ./mf-solver $(echo $line | xargs)
+  done < <(./testcasegen 5 3)
+#+end_src
