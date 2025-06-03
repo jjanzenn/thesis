@@ -5,4 +5,4 @@ all:
 	go build src/testcasegen/testcasegen.go
 
 clean:
-	rm -f mf-solver
+	rm -f mf-solver testcasegen
