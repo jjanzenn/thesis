@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/fraction"
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/solver"
@@ -54,5 +55,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "No such graph: %s", err)
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stderr, list)
+
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', tabwriter.AlignRight)
+	for _, line := range list {
+		for _, frac := range line {
+			fmt.Fprintf(w, "%s\t", frac)
+		}
+		fmt.Fprintln(w)
+	}
+	w.Flush()
 }
