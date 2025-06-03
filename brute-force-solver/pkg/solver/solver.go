@@ -8,8 +8,7 @@ import (
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/fraction"
 )
 
-var seenStates map[string]bool
-var seenStatesLock sync.Mutex
+var seenStates sync.Map
 
 func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, targets string, state []fraction.Fraction) {
 	if targets == fmt.Sprint(state) {
@@ -34,15 +33,12 @@ func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, tar
 						return stateCopy[i2].LessThan(stateCopy[j2])
 					})
 
-					seenStatesLock.Lock()
 					strStateCopy := fmt.Sprint(stateCopy)
-					_, ok := seenStates[strStateCopy]
+					_, ok := seenStates.LoadOrStore(strStateCopy, true)
 					if !ok {
-						seenStates[strStateCopy] = true
 						numChildren++
 						go solveRecursively(childResultChan, maxPrecision, targets, stateCopy)
 					}
-					seenStatesLock.Unlock()
 				}
 			}
 		}
@@ -106,7 +102,6 @@ func Solve(maxPrecision uint8, targets []fraction.Fraction) ([][]fraction.Fracti
 		return initial[i].LessThan(initial[j])
 	})
 
-	seenStates = make(map[string]bool)
 	results := make(chan [][]fraction.Fraction)
 	go solveRecursively(results, maxPrecision, fmt.Sprint(targets), initial)
 	list := <-results
