@@ -10,7 +10,43 @@ import (
 
 var seenStates sync.Map
 
-func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, targets string, state []fraction.Fraction) {
+type ErrorTree struct {
+	state    []fraction.Fraction
+	err      error
+	children []ErrorTree
+}
+
+func (err *ErrorTree) errorTreeStringHelper(prelude string) string {
+	result := fmt.Sprintf("%s%s %s\n", prelude, err.state, err.err)
+
+	new_prelude := ""
+	for _, c := range prelude {
+		if c == '├' {
+			c = '│'
+		} else if c == '└' {
+			c = ' '
+		}
+		new_prelude += string(c)
+	}
+	prelude = new_prelude
+
+	if len(err.children) >= 2 {
+		for _, child := range err.children[:len(err.children)-2] {
+			result += child.errorTreeStringHelper(prelude + "├")
+		}
+	}
+	if len(err.children) >= 1 {
+		result += err.children[len(err.children)-1].errorTreeStringHelper(prelude + "└")
+	}
+
+	return result
+}
+
+func (err ErrorTree) String() string {
+	return err.errorTreeStringHelper("")
+}
+
+func solveRecursively(result chan [][]fraction.Fraction, errors chan ErrorTree, maxPrecision uint8, targets string, state []fraction.Fraction) {
 	if targets == fmt.Sprint(state) {
 		returnVal := make([][]fraction.Fraction, 0)
 		returnVal = append(returnVal, state)
@@ -19,25 +55,48 @@ func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, tar
 	}
 
 	childResultChan := make(chan [][]fraction.Fraction)
+	childErrorChan := make(chan ErrorTree)
+	childErrors := make([]ErrorTree, 0)
+
 	numChildren := 0
 	for i, frac1 := range state {
 		for j, frac2 := range state[i+1:] {
 			if frac1 != frac2 {
 				mix, err := frac1.Mix(frac2)
-				if err == nil && mix.DenominatorExponent <= maxPrecision {
-					stateCopy := make([]fraction.Fraction, len(state))
-					copy(stateCopy, state)
-					stateCopy[i] = mix
-					stateCopy[i+1+j] = mix
-					sort.Slice(stateCopy, func(i2, j2 int) bool {
-						return stateCopy[i2].LessThan(stateCopy[j2])
-					})
 
-					strStateCopy := fmt.Sprint(stateCopy)
-					_, ok := seenStates.LoadOrStore(strStateCopy, true)
+				stateCopy := make([]fraction.Fraction, len(state))
+				copy(stateCopy, state)
+				stateCopy[i] = mix
+				stateCopy[i+1+j] = mix
+				sort.Slice(stateCopy, func(i2, j2 int) bool {
+					return stateCopy[i2].LessThan(stateCopy[j2])
+				})
+
+				strStateCopy := fmt.Sprint(stateCopy)
+				_, ok := seenStates.LoadOrStore(strStateCopy, true)
+
+				if err != nil {
+					childErrors = append(childErrors, ErrorTree{
+						state:    nil,
+						err:      err,
+						children: nil,
+					})
+				} else if mix.DenominatorExponent > maxPrecision {
+					childErrors = append(childErrors, ErrorTree{
+						state:    stateCopy,
+						err:      fmt.Errorf("denominator %d too large", 1<<mix.DenominatorExponent),
+						children: nil,
+					})
+				} else if ok {
+					childErrors = append(childErrors, ErrorTree{
+						state:    stateCopy,
+						err:      fmt.Errorf("state already seen"),
+						children: nil,
+					})
+				} else {
 					if !ok {
 						numChildren++
-						go solveRecursively(childResultChan, maxPrecision, targets, stateCopy)
+						go solveRecursively(childResultChan, childErrorChan, maxPrecision, targets, stateCopy)
 					}
 				}
 			}
@@ -46,6 +105,7 @@ func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, tar
 
 	results := make([][]fraction.Fraction, 1)
 	results[0] = state
+
 	numDone := 0
 	noPathToTarget := true
 	for numDone < numChildren {
@@ -55,17 +115,26 @@ func solveRecursively(result chan [][]fraction.Fraction, maxPrecision uint8, tar
 			results = append(results, returnVal...)
 			numDone++
 			returnValLen = len(returnVal)
+		case returnVal := <-childErrorChan:
+			childErrors = append(childErrors, returnVal)
+			numDone++
 		}
 		if returnValLen > 0 {
 			noPathToTarget = false
 			break
 		}
 	}
-	if noPathToTarget {
-		results = nil
-	}
 
-	result <- results
+	if noPathToTarget {
+		err := ErrorTree{
+			state:    state,
+			err:      fmt.Errorf(""),
+			children: childErrors,
+		}
+		errors <- err
+	} else {
+		result <- results
+	}
 }
 
 func Solve(maxPrecision uint8, targets []fraction.Fraction) ([][]fraction.Fraction, error) {
@@ -103,12 +172,15 @@ func Solve(maxPrecision uint8, targets []fraction.Fraction) ([][]fraction.Fracti
 	})
 
 	results := make(chan [][]fraction.Fraction)
-	go solveRecursively(results, maxPrecision, fmt.Sprint(targets), initial)
-	list := <-results
+	errors := make(chan ErrorTree)
+	go solveRecursively(results, errors, maxPrecision, fmt.Sprint(targets), initial)
 
-	if len(list) == 0 {
-		return nil, fmt.Errorf("no path to the target")
+	list := make([][]fraction.Fraction, 0)
+	var err ErrorTree
+	select {
+	case list = <-results:
+		return list, nil
+	case err = <-errors:
+		return nil, fmt.Errorf("no path to the target:\n%s", err)
 	}
-
-	return list, nil
 }
