@@ -52,7 +52,7 @@ func main() {
 
 	list, err := solver.Solve(maxPrecision, target)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "No such graph: %s\n", err)
+		fmt.Printf("No such graph: %s\n", err)
 		os.Exit(1)
 	}
 
