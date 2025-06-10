@@ -9,8 +9,6 @@ import (
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/fraction"
 )
 
-// TODO: weird results for  1/4 5/8 5/8 5/8 7/8
-
 var seenStates sync.Map
 
 type ErrorTree struct {
