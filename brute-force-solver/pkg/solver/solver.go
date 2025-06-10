@@ -9,6 +9,8 @@ import (
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/fraction"
 )
 
+// TODO: Incorrect for 1/8 1/8 1/8 1/4 3/8
+
 var seenStates sync.Map
 
 type ErrorTree struct {
@@ -47,6 +49,112 @@ func (err ErrorTree) String() string {
 	return err.errorTreeStringHelper("")
 }
 
+func minCounts(state []fraction.Fraction, targetFracs []fraction.Fraction) (int, int) {
+	if len(state) != len(targetFracs) || len(state) == 0 {
+		return 0, 0
+	}
+
+	min := targetFracs[0]
+
+	targetMinCount := 0
+	for _, frac := range targetFracs {
+		if frac.Eq(min) {
+			targetMinCount++
+		}
+	}
+
+	stateMinCount := 0
+	for _, frac := range state {
+		if frac.Eq(min) {
+			stateMinCount++
+		}
+	}
+
+	return stateMinCount, targetMinCount
+}
+
+func maxCounts(state []fraction.Fraction, targetFracs []fraction.Fraction) (int, int) {
+	if len(state) != len(targetFracs) || len(state) == 0 {
+		return 0, 0
+	}
+
+	max := targetFracs[len(targetFracs)-1]
+
+	targetMaxCount := 0
+	for _, frac := range targetFracs {
+		if frac.Eq(max) {
+			targetMaxCount++
+		}
+	}
+
+	stateMaxCount := 0
+	for _, frac := range state {
+		if frac.Eq(max) {
+			stateMaxCount++
+		}
+	}
+
+	return stateMaxCount, targetMaxCount
+}
+
+func minMix(state []fraction.Fraction, goal fraction.Fraction) (fraction.Fraction, error) {
+	// assumes state is sorted
+	mix := fraction.Fraction{
+		Numerator:           0,
+		DenominatorExponent: 0,
+	}
+
+	// find the smallest value larger than the goal
+	for _, frac := range state {
+		if !frac.LessThan(goal) {
+			mix = frac
+			break
+		}
+	}
+
+	// mix with every value less than the goal
+	for _, frac := range state {
+		if !goal.LessThan(frac) {
+			newmix, err := mix.Mix(frac)
+			if err != nil {
+				return newmix, fmt.Errorf("cannot check correctness: %s\n", err)
+			}
+			mix = newmix
+		}
+	}
+
+	return mix, nil
+}
+
+func maxMix(state []fraction.Fraction, goal fraction.Fraction) (fraction.Fraction, error) {
+	// assumes state is sorted
+	mix := fraction.Fraction{
+		Numerator:           0,
+		DenominatorExponent: 0,
+	}
+
+	// find the largest value smaller than the goal
+	for _, frac := range slices.Backward(state) {
+		if !goal.LessThan(frac) {
+			mix = frac
+			break
+		}
+	}
+
+	// mix with every value greater than the goal
+	for _, frac := range state {
+		if !frac.LessThan(goal) {
+			newmix, err := mix.Mix(frac)
+			if err != nil {
+				return newmix, fmt.Errorf("cannot check correctness: %s\n", err)
+			}
+			mix = newmix
+		}
+	}
+
+	return mix, nil
+}
+
 func assertTargetIsReachable(state []fraction.Fraction, targetFracs []fraction.Fraction) error {
 	// assumes target and state are sorted
 
@@ -58,87 +166,32 @@ func assertTargetIsReachable(state []fraction.Fraction, targetFracs []fraction.F
 		return nil
 	}
 
-	targetMinCount := 1
-	for _, frac := range targetFracs[1:] {
-		if frac.Eq(targetFracs[0]) {
-			targetMinCount++
-		} else {
-			break
-		}
-	}
-	stateMinCount := 0
-	for _, frac := range state {
-		if frac.Eq(targetFracs[0]) {
-			stateMinCount++
-		} else {
-			break
-		}
-	}
-	if targetFracs[0] == state[0] && stateMinCount < targetMinCount {
+	stateMinCount, targetMinCount := minCounts(state, targetFracs)
+
+	// insufficient number of the minimum fraction
+	if !state[0].LessThan(targetFracs[0]) && stateMinCount < targetMinCount {
 		return fmt.Errorf("insufficient instances of min value to reach target: %d < %d", stateMinCount, targetMinCount)
 	}
 
-	mix := fraction.Fraction{Numerator: 0, DenominatorExponent: 0}
-	for _, frac := range state[0:] {
-		if targetFracs[0].LessThan(frac) {
-			mix = frac
-			break
-		}
-	}
-	for _, frac := range state {
-		if frac.LessThan(targetFracs[0]) {
-			newmix, err := mix.Mix(frac)
-			if err != nil {
-				return fmt.Errorf("cannot check correctness: %s", err)
-			}
-			mix = newmix
-		} else {
-			break
-		}
-	}
-	if stateMinCount < targetMinCount && targetFracs[0].LessThan(mix) {
+	// no series of mixes will create the minimum
+	mix, err := minMix(state, targetFracs[0])
+	if err != nil {
+		return err
+	} else if stateMinCount < targetMinCount && targetFracs[0].LessThan(mix) {
 		return fmt.Errorf("no mix will ever reach minimum: %s < %s", targetFracs[0], mix)
 	}
 
-	targetMaxCount := 1
-	for _, frac := range targetFracs[:len(targetFracs)-1] {
-		if frac.Eq(targetFracs[len(targetFracs)-1]) {
-			targetMaxCount++
-		} else {
-			break
-		}
-	}
-	stateMaxCount := 0
-	for _, frac := range slices.Backward(state) {
-		if frac.Eq(targetFracs[len(targetFracs)-1]) {
-			stateMaxCount++
-		} else {
-			break
-		}
-	}
-	if targetFracs[len(targetFracs)-1] == state[len(state)-1] && stateMaxCount < targetMaxCount {
+	stateMaxCount, targetMaxCount := maxCounts(state, targetFracs)
+
+	// insufficient number of the maximum fraction
+	if !targetFracs[len(targetFracs)-1].LessThan(state[len(state)-1]) && stateMaxCount < targetMaxCount {
 		return fmt.Errorf("insufficient instances of max value to reach target: %d < %d", stateMaxCount, targetMaxCount)
 	}
 
-	mix = fraction.Fraction{Numerator: 0, DenominatorExponent: 0}
-	for _, frac := range slices.Backward(state) {
-		if frac.LessThan(targetFracs[len(targetFracs)-1]) {
-			mix = frac
-			break
-		}
-	}
-	for _, frac := range slices.Backward(state) {
-		if targetFracs[len(targetFracs)-1].LessThan(frac) {
-			newmix, err := mix.Mix(frac)
-			if err != nil {
-				return fmt.Errorf("cannot check correctness: %s", err)
-			}
-			mix = newmix
-		} else {
-			break
-		}
-	}
-	if stateMaxCount < targetMaxCount && mix.LessThan(targetFracs[len(targetFracs)-1]) {
+	mix, err = maxMix(state, targetFracs[len(targetFracs)-1])
+	if err != nil {
+		return err
+	} else if stateMaxCount < targetMaxCount && mix.LessThan(targetFracs[len(targetFracs)-1]) {
 		return fmt.Errorf("no mix will ever reach maximum: %s < %s", mix, targetFracs[len(targetFracs)-1])
 	}
 
@@ -155,9 +208,9 @@ func solveRecursively(
 	afterSaved []fraction.Fraction,
 ) {
 	if fmt.Sprint(targetFracs) == fmt.Sprint(state) {
-		returnVal := make([][]fraction.Fraction, 0)
-		returnVal = append(returnVal, state)
-		result <- returnVal
+		returnVal := append(beforeSaved, state...)
+		returnVal = append(returnVal, afterSaved...)
+		result <- [][]fraction.Fraction{returnVal}
 		return
 	}
 
