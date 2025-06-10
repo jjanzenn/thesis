@@ -9,7 +9,7 @@ import (
 	"git.jjanzen.ca/jjanzen/thesis/brute-force-solver/pkg/fraction"
 )
 
-// TODO: Incorrect for 1/8 1/8 1/8 1/4 3/8
+// TODO: weird results for  1/4 5/8 5/8 5/8 7/8
 
 var seenStates sync.Map
 
@@ -188,6 +188,7 @@ func assertTargetIsReachable(state []fraction.Fraction, targetFracs []fraction.F
 		return fmt.Errorf("insufficient instances of max value to reach target: %d < %d", stateMaxCount, targetMaxCount)
 	}
 
+	// no series of mixes will create the maximum
 	mix, err = maxMix(state, targetFracs[len(targetFracs)-1])
 	if err != nil {
 		return err
@@ -214,117 +215,129 @@ func solveRecursively(
 		return
 	}
 
-	childResultChan := make(chan [][]fraction.Fraction)
-	childErrorChan := make(chan ErrorTree)
-	childErrors := make([]ErrorTree, 0)
+	childResults := make(chan [][]fraction.Fraction)
+	childErrors := make(chan ErrorTree)
+	childErrorTree := make([]ErrorTree, 0)
 
-	staticState := make([]fraction.Fraction, len(state))
-	copy(staticState, state)
-	staticState = append(beforeSaved, staticState...)
-	staticState = append(staticState, afterSaved...)
+	// create copy of the state with saved values before and after
+	printableState := make([]fraction.Fraction, len(state))
+	copy(printableState, state)
+	printableState = append(beforeSaved, printableState...)
+	printableState = append(printableState, afterSaved...)
 
+	// count the number of child goroutines
 	numChildren := 0
+
 	for i, frac1 := range state {
 		for j, frac2 := range state[i+1:] {
-			if frac1 != frac2 {
-				mix, err := frac1.Mix(frac2)
-				if err != nil {
-					childErrors = append(childErrors, ErrorTree{
-						state:    nil,
-						err:      err,
-						children: nil,
-					})
-				} else {
-					stateCopy := make([]fraction.Fraction, len(state))
-					copy(stateCopy, state)
-					stateCopy[i] = mix
-					stateCopy[i+1+j] = mix
-					sort.Slice(stateCopy, func(i2, j2 int) bool {
-						return stateCopy[i2].LessThan(stateCopy[j2])
-					})
+			if frac1 == frac2 {
+				continue // don't do nops
+			}
 
-					strStateCopy := fmt.Sprint(stateCopy)
-					_, ok := seenStates.LoadOrStore(strStateCopy, true)
+			// try mixing the two fractions, continuing loop early on error
+			mix, err := frac1.Mix(frac2)
+			if err != nil {
+				childErrorTree = append(childErrorTree, ErrorTree{
+					state:    nil,
+					err:      err,
+					children: nil,
+				})
+				continue
+			}
 
-					targetFracsCopy := make([]fraction.Fraction, len(targetFracs))
-					copy(targetFracsCopy, targetFracs)
+			// perform the mixing operation on a copy of the state;
+			// keep it sorted
+			stateCopy := make([]fraction.Fraction, len(state))
+			copy(stateCopy, state)
+			stateCopy[i] = mix
+			stateCopy[i+1+j] = mix
+			sort.Slice(stateCopy, func(i2, j2 int) bool {
+				return stateCopy[i2].LessThan(stateCopy[j2])
+			})
 
-					beforeSavedCopy := make([]fraction.Fraction, len(beforeSaved))
-					copy(beforeSavedCopy, beforeSaved)
+			// check if the state has been seen already
+			// otherwise, note it as seen
+			_, ok := seenStates.LoadOrStore(fmt.Sprint(stateCopy), true)
 
-					afterSavedCopy := make([]fraction.Fraction, len(afterSaved))
-					copy(afterSavedCopy, afterSaved)
+			// create copies of the target and saved value lists
+			targetFracsCopy := make([]fraction.Fraction, len(targetFracs))
+			copy(targetFracsCopy, targetFracs)
+			beforeSavedCopy := make([]fraction.Fraction, len(beforeSaved))
+			copy(beforeSavedCopy, beforeSaved)
+			afterSavedCopy := make([]fraction.Fraction, len(afterSaved))
+			copy(afterSavedCopy, afterSaved)
 
-					for len(stateCopy) > 0 && stateCopy[0].Eq(targetFracsCopy[0]) {
-						beforeSavedCopy = append(beforeSavedCopy, stateCopy[0])
-						stateCopy = stateCopy[1:]
-						targetFracsCopy = targetFracsCopy[1:]
-					}
-					for len(stateCopy) > 0 && stateCopy[len(stateCopy)-1].Eq(targetFracsCopy[len(targetFracsCopy)-1]) {
-						afterSavedCopy = append([]fraction.Fraction{stateCopy[len(stateCopy)-1]}, afterSavedCopy...)
-						stateCopy = stateCopy[:len(stateCopy)-1]
-						targetFracsCopy = targetFracsCopy[:len(targetFracsCopy)-1]
-					}
+			// trim values from the state that cannot be used
+			// add them to the saved value lists
+			for len(stateCopy) > 0 && stateCopy[0].Eq(targetFracsCopy[0]) {
+				beforeSavedCopy = append(beforeSavedCopy, stateCopy[0])
+				stateCopy = stateCopy[1:]
+				targetFracsCopy = targetFracsCopy[1:]
+			}
+			for len(stateCopy) > 0 && stateCopy[len(stateCopy)-1].Eq(targetFracsCopy[len(targetFracsCopy)-1]) {
+				afterSavedCopy = append([]fraction.Fraction{stateCopy[len(stateCopy)-1]}, afterSavedCopy...)
+				stateCopy = stateCopy[:len(stateCopy)-1]
+				targetFracsCopy = targetFracsCopy[:len(targetFracsCopy)-1]
+			}
 
-					staticStateCopy := make([]fraction.Fraction, len(state))
-					copy(staticStateCopy, state)
+			// make a printable version of the state including the saved values
+			newPrintableState := append(beforeSavedCopy, stateCopy...)
+			newPrintableState = append(newPrintableState, afterSavedCopy...)
 
-					staticStateCopy = append(beforeSavedCopy, stateCopy...)
-					staticStateCopy = append(stateCopy, afterSavedCopy...)
+			// check for invariants
+			err = assertTargetIsReachable(stateCopy, targetFracsCopy)
 
-					err = assertTargetIsReachable(stateCopy, targetFracsCopy)
-
-					if ok {
-						childErrors = append(childErrors, ErrorTree{
-							state:    staticStateCopy,
-							err:      fmt.Errorf("state already seen"),
-							children: nil,
-						})
-					} else if err != nil {
-						childErrors = append(childErrors, ErrorTree{
-							state:    staticStateCopy,
-							err:      err,
-							children: nil,
-						})
-					} else if mix.DenominatorExponent > maxPrecision {
-						childErrors = append(childErrors, ErrorTree{
-							state:    staticStateCopy,
-							err:      fmt.Errorf("denominator %d too large", 1<<mix.DenominatorExponent),
-							children: nil,
-						})
-					} else {
-						if !ok {
-							numChildren++
-							go solveRecursively(
-								childResultChan,
-								childErrorChan,
-								maxPrecision,
-								targetFracsCopy,
-								stateCopy,
-								beforeSavedCopy,
-								afterSavedCopy,
-							)
-						}
-					}
+			// if a state has aleady been seen, an invariant is invalidated,
+			// or the denominator is too large, append to the error tree
+			if ok {
+				childErrorTree = append(childErrorTree, ErrorTree{
+					state:    newPrintableState,
+					err:      fmt.Errorf("state already seen"),
+					children: nil,
+				})
+			} else if err != nil {
+				childErrorTree = append(childErrorTree, ErrorTree{
+					state:    newPrintableState,
+					err:      err,
+					children: nil,
+				})
+			} else if mix.DenominatorExponent > maxPrecision {
+				childErrorTree = append(childErrorTree, ErrorTree{
+					state:    newPrintableState,
+					err:      fmt.Errorf("denominator %d too large", 1<<mix.DenominatorExponent),
+					children: nil,
+				})
+			} else {
+				if !ok {
+					numChildren++
+					go solveRecursively(
+						childResults,
+						childErrors,
+						maxPrecision,
+						targetFracsCopy,
+						stateCopy,
+						beforeSavedCopy,
+						afterSavedCopy,
+					)
 				}
 			}
 		}
 	}
 
 	results := make([][]fraction.Fraction, 1)
-	results[0] = staticState
+	results[0] = printableState
 
 	numDone := 0
 	noPathToTarget := true
 	for numDone < numChildren {
 		returnValLen := 0
 		select {
-		case returnVal := <-childResultChan:
+		case returnVal := <-childResults:
 			results = append(results, returnVal...)
 			numDone++
 			returnValLen = len(returnVal)
-		case returnVal := <-childErrorChan:
-			childErrors = append(childErrors, returnVal)
+		case returnVal := <-childErrors:
+			childErrorTree = append(childErrorTree, returnVal)
 			numDone++
 		}
 		if returnValLen > 0 {
@@ -335,9 +348,9 @@ func solveRecursively(
 
 	if noPathToTarget {
 		err := ErrorTree{
-			state:    staticState,
+			state:    printableState,
 			err:      fmt.Errorf(""),
-			children: childErrors,
+			children: childErrorTree,
 		}
 		errors <- err
 	} else {
