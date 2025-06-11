@@ -153,6 +153,98 @@ func maxMix(state []fraction.Fraction, goal fraction.Fraction) (fraction.Fractio
 	return mix, nil
 }
 
+func tryMixWidth3(mix fraction.Fraction, oldmix fraction.Fraction, targetFracs []fraction.Fraction) (bool, error) {
+	var maxDenominatorExponent uint8 = 0
+	for _, frac := range targetFracs {
+		if frac.DenominatorExponent > maxDenominatorExponent {
+			maxDenominatorExponent = frac.DenominatorExponent
+		}
+	}
+
+	for mix.DenominatorExponent <= maxDenominatorExponent {
+		newState := make([]fraction.Fraction, 3)
+		if mix.LessThan(oldmix) {
+			newState[0] = mix
+			newState[2] = oldmix
+		} else {
+			newState[0] = oldmix
+			newState[2] = mix
+		}
+		newState[1] = mix
+
+		if fmt.Sprint(newState) == fmt.Sprint(targetFracs) {
+			return true, nil
+		}
+
+		var err error
+		temp := mix
+		mix, err = mix.Mix(oldmix)
+		if err != nil {
+			return false, fmt.Errorf("cannot evaluate correctly: %s", err)
+		}
+		oldmix = temp
+
+		if mix.Eq(oldmix) {
+			return false, nil
+		}
+	}
+
+	return false, nil
+}
+
+func assertNoWidth3InfiniteLoop(state []fraction.Fraction, targetFracs []fraction.Fraction) error {
+	if len(state) != len(targetFracs) || len(state) != 3 {
+		return nil
+	}
+
+	if !state[0].Eq(state[1]) {
+		mix, err := state[0].Mix(state[1])
+		if err != nil {
+			return fmt.Errorf("cannot evaluate correctly: %s", err)
+		}
+		oldmix := state[2]
+
+		finishes, err := tryMixWidth3(mix, oldmix, targetFracs)
+		if err != nil {
+			return err
+		} else if finishes {
+			return nil
+		}
+	}
+
+	if !state[0].Eq(state[2]) {
+		mix, err := state[0].Mix(state[2])
+		if err != nil {
+			return fmt.Errorf("cannot evaluate correctly: %s", err)
+		}
+		oldmix := state[1]
+
+		finishes, err := tryMixWidth3(mix, oldmix, targetFracs)
+		if err != nil {
+			return err
+		} else if finishes {
+			return nil
+		}
+	}
+
+	if !state[1].Eq(state[2]) {
+		mix, err := state[1].Mix(state[2])
+		if err != nil {
+			return fmt.Errorf("cannot evaluate correctly: %s", err)
+		}
+		oldmix := state[0]
+
+		finishes, err := tryMixWidth3(mix, oldmix, targetFracs)
+		if err != nil {
+			return err
+		} else if finishes {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("entered an infinite loop")
+}
+
 func assertTargetIsReachable(state []fraction.Fraction, targetFracs []fraction.Fraction) error {
 	// assumes target and state are sorted
 
@@ -194,7 +286,7 @@ func assertTargetIsReachable(state []fraction.Fraction, targetFracs []fraction.F
 		return fmt.Errorf("no mix will ever reach maximum: %s < %s", mix, targetFracs[len(targetFracs)-1])
 	}
 
-	return nil
+	return assertNoWidth3InfiniteLoop(state, targetFracs)
 }
 
 func solveRecursively(
